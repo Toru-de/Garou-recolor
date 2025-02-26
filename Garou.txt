@@ -1,0 +1,83 @@
+local Workspace = game:GetService("Workspace")
+local LiveFolder = Workspace:FindFirstChild("Live")
+local TargetPlayer = "Ur user here"
+
+if not LiveFolder then
+    warn("[ERROR] Live folder not found in Workspace!")
+    return
+end
+
+print("[INFO] Live folder found. Monitoring all player models and " .. TargetPlayer)
+
+local function changeColor(object)
+    if object:IsA("ParticleEmitter") then
+        object.Color = ColorSequence.new(Color3.fromRGB(75, 0, 130))
+        object.Brightness = 1
+        print("[INFO] Changed color and brightness of ParticleEmitter: " .. object:GetFullName())
+    elseif object:IsA("Trail") then
+        object.Color = ColorSequence.new(Color3.fromRGB(75, 0, 130))
+        print("[INFO] Changed color of Trail: " .. object:GetFullName())
+    end
+end
+
+local function updateParticles(container)
+    if container then
+        print("[INFO] Updating particles in: " .. container:GetFullName())
+        for _, descendant in ipairs(container:GetDescendants()) do
+            if descendant:IsA("ParticleEmitter") or descendant:IsA("Trail") then
+                changeColor(descendant)
+            end
+        end
+    end
+end
+
+local function monitorEverything(model)
+    print("[INFO] Monitoring everything in model: " .. model.Name)
+    updateParticles(model)
+    model.DescendantAdded:Connect(function(descendant)
+        if descendant:IsA("ParticleEmitter") or descendant:IsA("Trail") then
+            changeColor(descendant)
+        end
+    end)
+    model.ChildAdded:Connect(function(child)
+        print("[INFO] New item added to " .. model.Name .. ": " .. child.Name)
+        updateParticles(child)
+        child.DescendantAdded:Connect(function(descendant)
+            if descendant:IsA("ParticleEmitter") or descendant:IsA("Trail") then
+                changeColor(descendant)
+            end
+        end)
+    end)
+end
+
+local function monitorAllServices()
+    for _, service in ipairs(game:GetChildren()) do
+        if service:IsA("Service") or service:IsA("Folder") then
+            for _, obj in ipairs(service:GetDescendants()) do
+                if obj:IsA("ParticleEmitter") or obj:IsA("Trail") then
+                    changeColor(obj)
+                end
+            end
+            service.DescendantAdded:Connect(function(descendant)
+                if descendant:IsA("ParticleEmitter") or descendant:IsA("Trail") then
+                    changeColor(descendant)
+                end
+            end)
+        end
+    end
+end
+
+local function onPlayerAdded(child)
+    if child:IsA("Model") then
+        print("[INFO] Player model detected: " .. child.Name)
+        monitorEverything(child)
+    end
+end
+
+for _, model in ipairs(LiveFolder:GetChildren()) do
+    onPlayerAdded(model)
+end
+
+LiveFolder.ChildAdded:Connect(onPlayerAdded)
+
+monitorAllServices()
