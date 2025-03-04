@@ -1,83 +1,476 @@
 local Workspace = game:GetService("Workspace")
 local LiveFolder = Workspace:FindFirstChild("Live")
-local TargetPlayer = "Ur user here"
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local TargetPlayer = "GiveUSKJRLLYFAST" -- Replace with the actual username
+
+-- Rayfield UI Library
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+-- Default color settings
+local colorSettings = {
+    color = Color3.fromRGB(255, 255, 255), -- Default white
+    brightness = 1
+}
+
+-- Performance optimization settings
+local updateInterval = 1 -- Update colors every 1 second instead of every frame
+local lastUpdateTime = 0
+local debugMode = false -- Set to true to enable detailed logging
+local connections = {} -- Store connections for cleanup
+
+-- Function to safely log messages (only when debug mode is enabled)
+local function debugLog(message)
+    if debugMode then
+        print(message)
+    end
+end
 
 if not LiveFolder then
     warn("[ERROR] Live folder not found in Workspace!")
     return
 end
 
-print("[INFO] Live folder found. Monitoring all player models and " .. TargetPlayer)
+print("[INFO] Live folder found. Monitoring Waterpalm and items for player: " .. TargetPlayer)
+
+-- Function to determine if an object should be recolored (only for Garou)
+local function shouldRecolorGarou(object)
+    -- Check if object is part of Waterpalm and belongs to target player
+    local objectPath = object:GetFullName():lower()
+    if objectPath:find("waterpalm") then
+        -- Check if inside the specific target player's model
+        local parent = object.Parent
+        while parent do
+            if parent:IsA("Model") and parent.Name == TargetPlayer and parent:FindFirstChild("Humanoid") then
+                -- This is inside the target player's model
+                return true
+            end
+            parent = parent.Parent
+        end
+    end
+    
+    -- Check if inside the specific target player's model
+    local parent = object.Parent
+    while parent do
+        if parent:IsA("Model") and parent.Name == TargetPlayer and parent:FindFirstChild("Humanoid") then
+            -- This is inside the target player's model
+            return true
+        end
+        parent = parent.Parent
+    end
+    
+    return false
+end
+
+-- Function to check if an object is a SmokeBack attachment
+local function isSmokeBackAttachment(object)
+    return object:IsA("Attachment") and object.Name == "SmokeBack"
+end
+
+-- Function to safely disconnect a connection
+local function safeDisconnect(connection)
+    if connection and typeof(connection) == "RBXScriptConnection" and connection.Connected then
+        connection:Disconnect()
+    end
+end
+
+-- Function to cleanup connections when an object is removed
+local function setupConnectionCleanup(object, connectionsList)
+    -- Create a cleanup connection that will disconnect all connections when the object is removed
+    local ancestryChangedConn = object.AncestryChanged:Connect(function(_, parent)
+        if not parent then -- Object was removed from the game
+            for _, conn in pairs(connectionsList) do
+                safeDisconnect(conn)
+            end
+            safeDisconnect(ancestryChangedConn)
+        end
+    end)
+    
+    -- Add the cleanup connection itself to the list
+    table.insert(connectionsList, ancestryChangedConn)
+    
+    -- Add to global connections table for script cleanup
+    table.insert(connections, ancestryChangedConn)
+end
 
 local function changeColor(object)
+    if not shouldRecolorGarou(object) then return end
+    
+    local objectConnections = {}
+    
     if object:IsA("ParticleEmitter") then
-        object.Color = ColorSequence.new(Color3.fromRGB(75, 0, 130))
-        object.Brightness = 1
-        print("[INFO] Changed color and brightness of ParticleEmitter: " .. object:GetFullName())
+        -- Change to selected color
+        object.Color = ColorSequence.new(colorSettings.color)
+        object.Brightness = colorSettings.brightness
+        debugLog("[INFO] Changed color of ParticleEmitter: " .. object:GetFullName())
+        
+        -- Store object reference for bulk updates instead of individual connections
+        table.insert(connections, object)
+        
     elseif object:IsA("Trail") then
-        object.Color = ColorSequence.new(Color3.fromRGB(75, 0, 130))
-        print("[INFO] Changed color of Trail: " .. object:GetFullName())
+        -- Change to selected color
+        object.Color = ColorSequence.new(colorSettings.color)
+        debugLog("[INFO] Changed color of Trail: " .. object:GetFullName())
+        
+        -- Store object reference for bulk updates
+        table.insert(connections, object)
     end
+    
+    -- Setup cleanup for this object's connections
+    setupConnectionCleanup(object, objectConnections)
+end
+
+local function changeSmokeBackColor(object)
+    local objectConnections = {}
+    
+    local function updateColor()
+        if object:IsA("ParticleEmitter") then
+            object.Color = ColorSequence.new(colorSettings.color)
+            object.Brightness = colorSettings.brightness
+            debugLog("[INFO] Updated color of SmokeBack ParticleEmitter: " .. object:GetFullName())
+        elseif object:IsA("Trail") then
+            object.Color = ColorSequence.new(colorSettings.color)
+            debugLog("[INFO] Updated color of SmokeBack Trail: " .. object:GetFullName())
+        end
+    end
+    
+    updateColor()
+    
+    local updateConnection = RunService.Heartbeat:Connect(updateColor)
+    table.insert(objectConnections, updateConnection)
+    table.insert(connections, updateConnection)
+    
+    setupConnectionCleanup(object, objectConnections)
 end
 
 local function updateParticles(container)
-    if container then
-        print("[INFO] Updating particles in: " .. container:GetFullName())
-        for _, descendant in ipairs(container:GetDescendants()) do
-            if descendant:IsA("ParticleEmitter") or descendant:IsA("Trail") then
-                changeColor(descendant)
-            end
+    if not container then return end
+    
+    for _, descendant in ipairs(container:GetDescendants()) do
+        if descendant:IsA("ParticleEmitter") or descendant:IsA("Trail") then
+            changeColor(descendant)
         end
     end
 end
 
-local function monitorEverything(model)
-    print("[INFO] Monitoring everything in model: " .. model.Name)
-    updateParticles(model)
-    model.DescendantAdded:Connect(function(descendant)
+local function monitorSmokeBackAttachment(attachment)
+    debugLog("[INFO] SmokeBack attachment found: " .. attachment:GetFullName())
+    
+    local function updateSmokeBackColor()
+        for _, descendant in ipairs(attachment:GetDescendants()) do
+            if descendant:IsA("ParticleEmitter") or descendant:IsA("Trail") then
+                changeSmokeBackColor(descendant)
+            end
+        end
+    end
+    
+    updateSmokeBackColor()
+    
+    local descendantAddedConn = attachment.DescendantAdded:Connect(function(descendant)
         if descendant:IsA("ParticleEmitter") or descendant:IsA("Trail") then
-            changeColor(descendant)
+            changeSmokeBackColor(descendant)
         end
     end)
-    model.ChildAdded:Connect(function(child)
-        print("[INFO] New item added to " .. model.Name .. ": " .. child.Name)
-        updateParticles(child)
-        child.DescendantAdded:Connect(function(descendant)
-            if descendant:IsA("ParticleEmitter") or descendant:IsA("Trail") then
-                changeColor(descendant)
-            end
-        end)
-    end)
+    
+    local updateConnection = RunService.Heartbeat:Connect(updateSmokeBackColor)
+    
+    table.insert(connections, descendantAddedConn)
+    table.insert(connections, updateConnection)
+    setupConnectionCleanup(attachment, {descendantAddedConn, updateConnection})
 end
 
-local function monitorAllServices()
-    for _, service in ipairs(game:GetChildren()) do
-        if service:IsA("Service") or service:IsA("Folder") then
-            for _, obj in ipairs(service:GetDescendants()) do
-                if obj:IsA("ParticleEmitter") or obj:IsA("Trail") then
-                    changeColor(obj)
-                end
+local function monitorPlayerModel(model)
+    -- Check if this is the target player for full Garou recoloring
+    local isTargetPlayer = (model.Name == TargetPlayer)
+    
+    local modelConnections = {}
+    local player = Players:GetPlayerFromCharacter(model)
+    
+    -- Setup respawn monitoring if this is a player character
+    if player then
+        local function onCharacterAdded(newCharacter)
+            debugLog("[INFO] Player " .. player.Name .. " respawned, reconnecting monitors")
+            monitorPlayerModel(newCharacter)
+        end
+        
+        local characterAddedConn = player.CharacterAdded:Connect(onCharacterAdded)
+        table.insert(modelConnections, characterAddedConn)
+        table.insert(connections, characterAddedConn)
+    end
+    
+    if isTargetPlayer then
+        debugLog("[INFO] Monitoring target player model for full Garou recolor: " .. model.Name)
+        updateParticles(model)
+        
+        local descendantAddedConn = model.DescendantAdded:Connect(function(descendant)
+            if descendant:IsA("ParticleEmitter") or descendant:IsA("Trail") then
+                changeColor(descendant)
+            elseif isSmokeBackAttachment(descendant) then
+                monitorSmokeBackAttachment(descendant)
             end
-            service.DescendantAdded:Connect(function(descendant)
-                if descendant:IsA("ParticleEmitter") or descendant:IsA("Trail") then
-                    changeColor(descendant)
+        end)
+        
+        table.insert(modelConnections, descendantAddedConn)
+        table.insert(connections, descendantAddedConn)
+    end
+    
+    -- For all players, monitor HumanoidRootPart for SmokeBack attachment
+    local humanoidRootPart = model:FindFirstChild("HumanoidRootPart")
+    if humanoidRootPart then
+        -- Check for existing SmokeBack attachment
+        for _, child in ipairs(humanoidRootPart:GetChildren()) do
+            if isSmokeBackAttachment(child) then
+                monitorSmokeBackAttachment(child)
+            end
+        end
+        
+        -- Monitor for new SmokeBack attachments
+        local childAddedConn = humanoidRootPart.ChildAdded:Connect(function(child)
+            if isSmokeBackAttachment(child) then
+                monitorSmokeBackAttachment(child)
+            end
+        end)
+        
+        table.insert(modelConnections, childAddedConn)
+        table.insert(connections, childAddedConn)
+    end
+    
+    -- Monitor for HumanoidRootPart being added later
+    local childAddedConn = model.ChildAdded:Connect(function(child)
+        if child.Name == "HumanoidRootPart" then
+            -- Monitor this new HumanoidRootPart for SmokeBack
+            local attachmentAddedConn = child.ChildAdded:Connect(function(attachment)
+                if isSmokeBackAttachment(attachment) then
+                    monitorSmokeBackAttachment(attachment)
                 end
             end)
+            
+            table.insert(modelConnections, attachmentAddedConn)
+            table.insert(connections, attachmentAddedConn)
+            
+            -- Check for existing SmokeBack attachment
+            for _, attachment in ipairs(child:GetChildren()) do
+                if isSmokeBackAttachment(attachment) then
+                    monitorSmokeBackAttachment(attachment)
+                end
+            end
+        end
+    end)
+    
+    table.insert(modelConnections, childAddedConn)
+    table.insert(connections, childAddedConn)
+    
+    -- Setup cleanup for all model connections
+    setupConnectionCleanup(model, modelConnections)
+end
+
+-- Monitor services for Waterpalm-related items only for target player
+local function monitorSelectiveServices()
+    local serviceConnections = {}
+    
+    for _, service in ipairs(game:GetChildren()) do
+        if service:IsA("Service") or service:IsA("Folder") then
+            -- Only scan important services, skip others for performance
+            if service.Name == "Workspace" or service.Name == "ReplicatedStorage" then
+                for _, obj in ipairs(service:GetDescendants()) do
+                    if (obj:IsA("ParticleEmitter") or obj:IsA("Trail")) and shouldRecolorGarou(obj) then
+                        changeColor(obj)
+                    elseif isSmokeBackAttachment(obj) then
+                        monitorSmokeBackAttachment(obj)
+                    end
+                end
+                
+                local descendantAddedConn = service.DescendantAdded:Connect(function(descendant)
+                    if descendant:IsA("ParticleEmitter") or descendant:IsA("Trail") then
+                        changeColor(descendant)
+                    elseif isSmokeBackAttachment(descendant) then
+                        monitorSmokeBackAttachment(descendant)
+                    end
+                end)
+                
+                table.insert(serviceConnections, descendantAddedConn)
+                table.insert(connections, descendantAddedConn)
+            end
         end
     end
 end
 
 local function onPlayerAdded(child)
-    if child:IsA("Model") then
-        print("[INFO] Player model detected: " .. child.Name)
-        monitorEverything(child)
+    if child:IsA("Model") and child:FindFirstChild("Humanoid") then
+        debugLog("[INFO] Player model detected: " .. child.Name)
+        monitorPlayerModel(child)
     end
 end
 
-for _, model in ipairs(LiveFolder:GetChildren()) do
-    onPlayerAdded(model)
-end
+-- Create Rayfield UI
+local Window = Rayfield:CreateWindow({
+    Name = "Garou Recolor",
+    LoadingTitle = "Garou Recolor",
+    LoadingSubtitle = "by Trae AI",
+    ConfigurationSaving = {
+        Enabled = true,
+        FolderName = "GarouRecolor",
+        FileName = "GarouRecolorConfig"
+    },
+    KeySystem = false
+})
 
+-- Create color picker tab
+local Tab = Window:CreateTab("Color Settings")
+
+-- Add color picker
+local ColorPicker = Tab:CreateColorPicker({
+    Name = "Effect Color",
+    Color = colorSettings.color,
+    Flag = "effectColor",
+    Callback = function(newColor)
+        colorSettings.color = newColor
+        debugLog("[INFO] Color updated to: " .. tostring(newColor))
+        
+        -- Directly update all existing SmokeBack particles when color changes
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            if obj:IsA("ParticleEmitter") and obj.Parent and obj.Parent.Name == "SmokeBack" then
+                obj.Color = ColorSequence.new(newColor)
+            elseif obj:IsA("Trail") and obj.Parent and obj.Parent.Name == "SmokeBack" then
+                obj.Color = ColorSequence.new(newColor)
+            end
+        end
+    end
+})
+
+-- Add brightness slider
+local BrightnessSlider = Tab:CreateSlider({
+    Name = "Effect Brightness",
+    Range = {0, 2},
+    Increment = 0.1,
+    Suffix = "x",
+    CurrentValue = colorSettings.brightness,
+    Flag = "effectBrightness",
+    Callback = function(newValue)
+        colorSettings.brightness = newValue
+        debugLog("[INFO] Brightness updated to: " .. tostring(newValue))
+        
+        -- Directly update all existing SmokeBack particles when brightness changes
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            if obj:IsA("ParticleEmitter") and obj.Parent and obj.Parent.Name == "SmokeBack" then
+                obj.Brightness = newValue
+            end
+        end
+    end
+})
+
+-- Create fun features tab
+local FunTab = Window:CreateTab("Fun Features")
+
+-- Add character size slider
+local SizeSlider = FunTab:CreateSlider({
+    Name = "Character Size",
+    Range = {0.5, 3},
+    Increment = 0.1,
+    Suffix = "x",
+    CurrentValue = 1,
+    Flag = "characterSize",
+    Callback = function(newValue)
+        if LiveFolder then
+            local player = LiveFolder:FindFirstChild(TargetPlayer)
+            if player and player:FindFirstChild("Humanoid") then
+                player:ScaleTo(newValue)
+            end
+        end
+    end
+})
+
+-- Add jump power slider
+local JumpSlider = FunTab:CreateSlider({
+    Name = "Jump Power",
+    Range = {50, 500},
+    Increment = 10,
+    Suffix = " Power",
+    CurrentValue = 50,
+    Flag = "jumpPower",
+    Callback = function(newValue)
+        if LiveFolder then
+            local player = LiveFolder:FindFirstChild(TargetPlayer)
+            if player and player:FindFirstChild("Humanoid") then
+                player.Humanoid.JumpPower = newValue
+            end
+        end
+    end
+})
+
+-- Add speed slider
+local SpeedSlider = FunTab:CreateSlider({
+    Name = "Walk Speed",
+    Range = {16, 200},
+    Increment = 2,
+    Suffix = " Speed",
+    CurrentValue = 16,
+    Flag = "walkSpeed",
+    Callback = function(newValue)
+        if LiveFolder then
+            local player = LiveFolder:FindFirstChild(TargetPlayer)
+            if player and player:FindFirstChild("Humanoid") then
+                player.Humanoid.WalkSpeed = newValue
+            end
+        end
+    end
+})
+
+-- Add gravity toggle
+local GravityToggle = FunTab:CreateToggle({
+    Name = "Low Gravity",
+    CurrentValue = false,
+    Flag = "lowGravity",
+    Callback = function(Value)
+        if Workspace then
+            if Value then
+                Workspace.Gravity = 50
+            else
+                Workspace.Gravity = 196.2
+            end
+        end
+    end
+})
+
+-- Start monitoring
+monitorSelectiveServices()
 LiveFolder.ChildAdded:Connect(onPlayerAdded)
 
-monitorAllServices()
+-- Check for existing players
+for _, child in ipairs(LiveFolder:GetChildren()) do
+    onPlayerAdded(child)
+end
+-- Modify the ColorPicker callback
+Callback = function(newColor)
+    colorSettings.color = newColor
+    debugLog("[INFO] Color updated to: " .. tostring(newColor))
+    
+    -- Update all tracked objects at once
+    for _, obj in ipairs(connections) do
+        if typeof(obj) == "RBXScriptConnection" then
+            -- This is a connection, not an object to update
+            continue
+        elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") then
+            obj.Color = ColorSequence.new(newColor)
+        end
+    end
+end
+
+-- Return the script configuration for loadstring usage
+return {
+    SetTargetPlayer = function(username)
+        TargetPlayer = username
+        print("[INFO] Target player set to: " .. username)
+        
+        -- Refresh monitoring for new target
+        for _, conn in ipairs(connections) do
+            safeDisconnect(conn)
+        end
+        table.clear(connections)
+        
+        monitorSelectiveServices()
+        for _, child in ipairs(LiveFolder:GetChildren()) do
+            onPlayerAdded(child)
+        end
+    end
+}
