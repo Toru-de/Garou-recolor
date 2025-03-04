@@ -2,7 +2,7 @@ local Workspace = game:GetService("Workspace")
 local LiveFolder = Workspace:FindFirstChild("Live")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local TargetPlayer = "GiveUSKJRLLYFAST" -- Replace with the actual username
+local TargetPlayer = "User" -- Replace with the actual username
 
 -- Rayfield UI Library
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -306,7 +306,7 @@ end
 local Window = Rayfield:CreateWindow({
     Name = "Garou Recolor",
     LoadingTitle = "Garou Recolor",
-    LoadingSubtitle = "by Trae AI",
+    LoadingSubtitle = "by Toru",
     ConfigurationSaving = {
         Enabled = true,
         FolderName = "GarouRecolor",
